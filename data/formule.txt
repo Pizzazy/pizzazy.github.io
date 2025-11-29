@@ -1,0 +1,134 @@
+Formule folosite pentru proiecții (fișier explicativ)
+
+1) Model demografic (CBR / CDR / migrație)
+   - Notare:
+     P_t  = populația la începutul anului t
+     CBR  = rata brută a natalității (nașteri la 1000 locuitori pe an)
+     CDR  = rata brută a mortalității (decese la 1000 locuitori pe an)
+     M    = migrație netă (persoane pe an; pozitiv = intrări, negativ = plecări)
+
+   - Calcul anual (pentru fiecare an):
+     Nașteri = P_t * (CBR / 1000)
+     Decese  = P_t * (CDR / 1000)
+     P_{t+1} = P_t + Nașteri - Decese + M
+
+   - Observații: acest model este agregat (nu folosește structura pe vârste) și presupune aplicarea ratelor la populația totală la începutul fiecărui an.
+
+2) Indice fix (% anual)
+   - Notare:
+     i% = indice procentual anual (de ex. -1 înseamnă -1% pe an)
+
+   - Calcul anual:
+     P_{t+1} = P_t * (1 + i/100)
+
+   - Exemplu: dacă i = -1.0 și P_t = 20.000.000, atunci P_{t+1} = 20.000.000 * 0.99 = 19.800.000
+
+3) Scădere / creștere fixă (persoane pe an)
+   - Notare:
+     d = delta (număr de persoane adăugate/scăzute în fiecare an; ex: -50.000)
+
+   - Calcul anual:
+     P_{t+1} = P_t + d
+
+   - Observație: util când se dorește modelarea unui flux net constant (ex. migrație sau pierdere netă anuală constantă).
+
+4) Rată anuală (procent) — parametrizată sau "auto"
+   - Varianta parametrizată:
+     - utilizatorul introduce r%; se aplică multiplicatorul (1 + r/100) anual
+     - P_{t+1} = P_t * (1 + r/100)
+
+   - Varianta "auto":
+     - se estimează rata anuală din istoricul recent (implicit, din ultimii 5 ani disponibili). Se calculează rata geometrică medie anuală:
+       r = (P_last / P_prev)^(1/n) - 1, unde n = numărul de ani folosiți (ex. 5)
+     - apoi se aplică ca în varianta parametrizată.
+
+5) Observații generale
+   - Toate metodele aplică o limitare la valori finite și nu permit valori negative (se rotunjesc la 0 când calculele ar da sub 0).
+   - Pentru lizibilitate grafică, aplicația poate tăia valorile afișate peste o limită (de ex. max_ist * 1.5) și va afișa valoarea reală proiectată în rezumat și într-un tabel / CSV descărcabil.
+   - Modelele de mai sus sunt utile pentru comparații și scenarii simple; pentru analize robuste este recomandat un model pe vârste (cohort-component) care folosește fertilitate, mortalitate și migrație pe grupe de vârstă.
+
+Dacă vrei, pot extinde acest fișier cu exemple numerice, referințe INS sau instrucțiuni despre cum să alegi parametrii (ex: cum calculezi rata auto din intervale diferite de ani).
+
+6) Formule și pași pentru estimarea CBR, CDR și migrație (pentru scenarii)
+  - Date disponibile preferate:
+    * Seriile anuale de nașteri (Births_t) și decese (Deaths_t) și populația medie anuală (MidPop_t)
+    * Dacă nu există Births/Deaths, se poate folosi estimarea prin rezidu (vezi mai jos), dar are incertitudini.
+
+  A) Calcul direct din statistici vitale (recomandat când avem date)
+    - CBR_t  = (Births_t / MidPop_t) * 1000
+    - CDR_t  = (Deaths_t / MidPop_t) * 1000
+    - M_t    = NetMigration_t (dacă este raportat direct)
+
+  B) Calcul prin rezidu (când nu avem NetMigration dar avem Births/Deaths și populație la început/fin an)
+    - PopChange_t = Pop_{t+1} - Pop_t
+    - Rezidu M_t = PopChange_t - (Births_t - Deaths_t)
+      (M_t reprezintă migrația netă estimată ca diferență pentru anul t)
+
+  C) Estimări pentru scenarii (metode folosite în aplicație)
+    - Status-quo (valori implicite folosite dacă selectezi "status"):
+      * CBR_status = mean(CBR_{t-n+1 .. t})  (media aritmetică pe ultimii n ani; n implicit = 5)
+      * CDR_status = mean(CDR_{t-n+1 .. t})
+      * M_status   = mean(M_{t-n+1 .. t})
+    - Pessimistic (scenariu pesimist): aplicăm o ajustare negativă la CBR și o creștere la CDR și migrație negativă
+      * ex: CBR_pes = CBR_status * (1 - a)  (a = 0.05 înseamnă -5% față de status)
+      * CDR_pes = CDR_status * (1 + b)      (b = 0.02 înseamnă +2%)
+      * M_pes   = M_status + m_delta        (m_delta negativ pentru emigrare mai puternică)
+    - Pronatalist (creștere natalitate): putem seta o țintă și interpolăm
+      * CBR_target = CBR_status + delta_points  (ex: +2 puncte la CBR)
+      * pentru tranziție pe Y ani: CBR(t) = CBR_status + (CBR_target - CBR_status) * (k/Y) pentru anul k din 1..Y
+    - Variante bazate pe rată/indice (în modul Indici):
+      * Indice geometric (r%): r = (P_last / P_prev)^(1/n) - 1 (convertim în %)
+      * Delta medie anuală: d = mean( Pop_t - Pop_{t-1} ) pe ultimii n ani
+
+  D) Smooth sau estimări robuste
+    - În loc de media aritmetică, poți folosi mediana pentru a reduce influența anilor excepționali.
+    - Poți folosi o regresie liniară pe seriile de rate (CBR_t) pentru a proiecta tendința pe următorii ani (CBR(t) = a + b*t).
+
+7) Recomandare de lucru
+  - Ideal: pune aici seriile anuale de Births_t, Deaths_t și (dacă ai) NetMigration_t; pot calcula automat CBR/CDR/M_status folosind medii sau regresii, apoi voi insera valorile calculate ca preset pentru scenariul "status".
+  - Dacă vrei, pot adăuga un mic formular care încarcă CSV separate (Births/Deaths/Migration) și le folosește pentru a crea preseturile "status" automat.
+
+----------------------------------------
+Notă: aceste formule sunt aproximări utile pentru scenarii exploratorii. Pentru analize oficiale sau publicare, folosește datele vitale oficiale ale INS și, dacă este nevoie de precizie, un model cohort-component pe grupe de vârstă.
+
+---
+
+**Formule exacte folosite de cod (implementare curentă)**
+
+- Sursa preferată (ordinea de utilizare):
+  1. `data/nascuti.csv`  (seriile anuale de nașteri)
+  2. `data/morti.csv`    (seriile anuale de decese)
+  3. `data/imigratie permantenta.csv` (intrări permanente)
+  4. `data/emigratie_permanenta.csv`  (ieșiri permanente)
+  5. dacă lipsesc unele serii, se estimează migrația prin rezidu folosind `data/population-census.csv`
+
+- Mid-year population (populația medie anuală) utilizată în calcule:
+  MidPop_t ≈ (Pop_t + Pop_{t+1}) / 2
+  (unde Pop_t și Pop_{t+1} provin din seria anualizată generată din `population-census`)
+
+- CBR și CDR (formula exactă folosită):
+  CBR_t = (Births_t / MidPop_t) * 1000
+  CDR_t = (Deaths_t / MidPop_t) * 1000
+  (rezultatele sunt exprimate în ‰ — nașteri/decese la 1000 locuitori pe an)
+
+- Migrație netă (M_t):
+  - Dacă există atât imigrări cât și emigrații anuale, atunci:
+      M_t = Immigrants_t - Emigrants_t
+  - Altfel, se folosește migrația reziduală calculată din populație și evenimente vitale:
+      M_t(residual) = (Pop_{t+1} - Pop_t) - (Births_t - Deaths_t)
+    Aceasta este metoda de fallback când nu există o serie directă de migrație netă.
+
+- Preset-urile "status-quo" (cum sunt calculate în aplicație):
+  - Se folosesc mediile aritmetice ale ultimilor N ani disponibili din seriile combinate.
+  - Implementarea curentă folosește N = 5 (ultimii 5 ani disponibili).
+    Deci:
+      CBR_status = mean( CBR_{t-4}, ..., CBR_{t} )
+      CDR_status = mean( CDR_{t-4}, ..., CDR_{t} )
+      M_status   = mean( M_{t-4}, ..., M_{t} )
+  - Dacă pentru un an lipsește Births/Deaths dar există rezidu, se folosește rezidu pentru M_t acel an.
+
+- Observație practică:
+  - Valorile calculate sunt rotunjite la nivelul afișărilor (CBR/CDR cu 3 zecimale, migrație la persoane întregi) în UI.
+  - Dacă dorești altă fereastră (`N`) pentru media mobilă (ex. 3 ani), pot adăuga control în UI.
+
+Această secțiune documentează exact pașii implementați în `js/future.js` pentru a transforma seriile introduse de tine în parametri utilizați de scenariul "status".
